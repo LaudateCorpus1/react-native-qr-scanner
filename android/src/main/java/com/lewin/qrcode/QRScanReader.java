@@ -38,29 +38,46 @@ public class QRScanReader extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void readerQR(String fileUrl, Promise promise ) {
-        Result result = scanningImage(fileUrl);
-        if(result == null){
-            promise.reject("404","没有相关的二维码");
-//            result = decodeBarcodeRGB(fileUrl);
-//            if(result == null){
-//                result = decodeBarcodeYUV(fileUrl);
-//                if(result == null){
-//                    promise.reject("404","没有相关的二维码");
-//                }else{
-//                    promise.resolve(result.getText());
-//                }
-//            }else{
-//                promise.resolve(result.getText());
-//            }
+    public void readerQR(String path, Promise promise ) {
+        if (path == null || path.length() == 0) {
+            promise.reject("404", "NOT_FOUND");
+        }
 
-        }else{
+        Hashtable<DecodeHintType, String> hints = new Hashtable<>();
+        hints.put(DecodeHintType.CHARACTER_SET, "UTF8"); //设置二维码内容的编码
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true; // 先获取原大小
+        Bitmap scanBitmap = BitmapFactory.decodeFile(path, options);
+        options.inJustDecodeBounds = false; // 获取新的大小
+        int sampleSize = (int) (options.outHeight / (float) 1200);
+        if (sampleSize <= 0) {
+            sampleSize = 1;
+        }
+        options.inSampleSize = sampleSize;
+        scanBitmap = BitmapFactory.decodeFile(path, options);
+
+        int width=scanBitmap.getWidth();
+        int height=scanBitmap.getHeight();
+        int[] pixels=new int[width*height];
+        scanBitmap.getPixels(pixels,0,width,0,0,width,height);//获取图片像素点
+        RGBLuminanceSource source = new RGBLuminanceSource(scanBitmap.getWidth(),scanBitmap.getHeight(),pixels);
+        BinaryBitmap bitmap1 = new BinaryBitmap(new HybridBinarizer(source));
+        QRCodeReader reader = new QRCodeReader();
+
+        try {
+            Result result = reader.decode(bitmap1, hints);
             promise.resolve(result.getText());
+        } catch (NotFoundException e) {
+            promise.reject("404", "NOT_FOUND");
+        } catch (ChecksumException e) {
+            promise.reject("404", "NOT_FOUND");
+        } catch (FormatException e) {
+             promise.reject("404", "NOT_FOUND");
         }
     }
 
     /**
-     * 扫描二维码图片的方法
      * @param path
      * @return
      */
@@ -90,18 +107,16 @@ public class QRScanReader extends ReactContextBaseJavaModule {
         try {
             return reader.decode(bitmap1, hints);
         } catch (NotFoundException e) {
-            e.printStackTrace();
+            System.out.println("not found " + e.getMessage());
         } catch (ChecksumException e) {
-            e.printStackTrace();
+            System.out.println("bad checksum " + e.getMessage());
         } catch (FormatException e) {
-            e.printStackTrace();
+            System.out.println("bad format " + e.getMessage());
         }
         return null;
     }
 
     /**
-     * 解析二维码（使用解析RGB编码数据的方式）
-     *
      * @param path
      * @return
      */
@@ -117,8 +132,6 @@ public class QRScanReader extends ReactContextBaseJavaModule {
     }
 
     /**
-     * 解析二维码 （使用解析RGB编码数据的方式）
-     *
      * @param barcode
      * @return
      */
@@ -134,11 +147,11 @@ public class QRScanReader extends ReactContextBaseJavaModule {
         try {
             result = reader.decode(bitmap1);
         } catch (NotFoundException e) {
-            e.printStackTrace();
+            System.out.println("not found2 " + e.getMessage());
         } catch (ChecksumException e) {
-            e.printStackTrace();
+             System.out.println("bad checksum2 " + e.getMessage());
         } catch (FormatException e) {
-            e.printStackTrace();
+            System.out.println("bad format2 " + e.getMessage());
         }
         barcode.recycle();
         barcode = null;
@@ -146,8 +159,6 @@ public class QRScanReader extends ReactContextBaseJavaModule {
     }
 
     /**
-     * 解析二维码（使用解析YUV编码数据的方式）
-     *
      * @param path
      * @return
      */
@@ -165,8 +176,6 @@ public class QRScanReader extends ReactContextBaseJavaModule {
     }
 
     /**
-     * 解析二维码（使用解析YUV编码数据的方式）
-     *
      * @param barcode
      * @return
      */
@@ -176,13 +185,10 @@ public class QRScanReader extends ReactContextBaseJavaModule {
         }
         int width = barcode.getWidth();
         int height = barcode.getHeight();
-        //以argb方式存放图片的像素
         int[] argb = new int[width * height];
         barcode.getPixels(argb, 0, width, 0, 0, width, height);
-        //将argb转换为yuv
         byte[] yuv = new byte[width * height * 3 / 2];
         encodeYUV420SP(yuv, argb, width, height);
-        //解析YUV编码方式的二维码
         Result result = decodeBarcodeYUV(yuv, width, height);
 
         barcode.recycle();
@@ -191,8 +197,6 @@ public class QRScanReader extends ReactContextBaseJavaModule {
     }
 
     /**
-     * 解析二维码（使用解析YUV编码数据的方式）
-     *
      * @param yuv
      * @param width
      * @param height
@@ -223,7 +227,6 @@ public class QRScanReader extends ReactContextBaseJavaModule {
 
 
     /**
-     * RGB转YUV的公式是:
      * Y=0.299R+0.587G+0.114B;
      * U=-0.147R-0.289G+0.436B;
      * V=0.615R-0.515G-0.1B;
@@ -234,18 +237,12 @@ public class QRScanReader extends ReactContextBaseJavaModule {
      * @param height
      */
     private static void encodeYUV420SP(byte[] yuv, int[] argb, int width, int height) {
-        // 帧图片的像素大小
         final int frameSize = width * height;
-        // ---YUV数据---
         int Y, U, V;
-        // Y的index从0开始
         int yIndex = 0;
-        // UV的index从frameSize开始
         int uvIndex = frameSize;
-        // ---颜色数据---
         int R, G, B;
         int rgbIndex = 0;
-        // ---循环所有像素点，RGB转YUV---
         for (int j = 0; j < height; j++) {
             for (int i = 0; i < width; i++) {
                 R = (argb[rgbIndex] & 0xff0000) >> 16;
@@ -276,3 +273,4 @@ public class QRScanReader extends ReactContextBaseJavaModule {
         }
     }
 }
+
